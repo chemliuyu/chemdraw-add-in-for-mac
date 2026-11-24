@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Only managed-figure double clicks and managed ChemDraw window-close gestures are intercepted.
+// Managed figures and native OLE double clicks use the chemistry transaction worker.
 // Clipboard access is scoped to an explicit Office paste of recognized chemical data.
 import Cocoa
 import ApplicationServices
 let emitLock = NSLock()
+let nativeOLEReplaySignature: Int64 = 0x43464d4f4c45
 
 if CommandLine.arguments.dropFirst().first == "--discover-chemdraw" {
     let data = try JSONEncoder().encode(ChemDrawApplication.installed())
@@ -27,7 +28,60 @@ if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--is-running
     print(runningApplication(CommandLine.arguments[2]) == nil ? "no" : "yes")
     exit(0)
 }
-if CommandLine.arguments.count == 4 && CommandLine.arguments[1] == "--open-document" {
+if [5,6].contains(CommandLine.arguments.count) && CommandLine.arguments[1] == "--native-ole-open" {
+    let host = CommandLine.arguments.count == 6 ? CommandLine.arguments[5] : "powerpoint"
+    guard let office = OfficeHost(rawValue:host), let app = runningApplication(office.bundle),
+          NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier,
+          let selected = selectedOfficeFigure(host),
+          selected.reference == CommandLine.arguments[3], selected.tag == CommandLine.arguments[4],
+          let data = Data(base64Encoded:CommandLine.arguments[2]), data.count < 16384,
+          let down = CGEvent(withDataAllocator:nil,data:data as CFData), down.type == .leftMouseDown,
+          down.getIntegerValueField(.mouseEventClickState) == 2,
+          let up = down.copy() else { print("skipped"); exit(0) }
+    down.setIntegerValueField(.eventSourceUserData,value:nativeOLEReplaySignature)
+    up.setIntegerValueField(.eventSourceUserData,value:nativeOLEReplaySignature)
+    down.timestamp = DispatchTime.now().uptimeNanoseconds
+    up.type = .leftMouseUp; up.timestamp = down.timestamp+1_000_000
+    down.post(tap:.cghidEventTap); up.post(tap:.cghidEventTap)
+    RunLoop.main.run(until:Date().addingTimeInterval(0.05))
+    print("replayed"); exit(0)
+}
+func cancelOfficeMenus(_ ax:AXUIElement) {
+    guard let raw = attribute(ax,kAXMenuBarAttribute) else { return }
+    var pending = [unsafeBitCast(raw,to:AXUIElement.self)], menus = [AXUIElement](), visited = 0
+    while let item = pending.popLast(), visited < 5000 {
+        visited += 1
+        if attribute(item,kAXRoleAttribute) as? String == "AXMenu" { menus.append(item) }
+        pending += attribute(item,kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+    for menu in menus { _ = AXUIElementPerformAction(menu,kAXCancelAction as CFString) }
+}
+
+func activatePowerPointWindow(_ ax:AXUIElement,title:String) -> Bool {
+    func trace(_ text:String) { if ProcessInfo.processInfo.environment["CFM_OLE_TRACE"] == "1" { print("window menu: "+text) } }
+    guard let raw = attribute(ax,kAXMenuBarAttribute) else { return false }
+    let bar = unsafeBitCast(raw,to:AXUIElement.self)
+    guard let menu = (attribute(bar,kAXChildrenAttribute) as? [AXUIElement] ?? []).first(where: {
+        attribute($0,kAXIdentifierAttribute) as? String == "WindowMenu_MenuItem"
+    }), AXUIElementPerformAction(menu,kAXPressAction as CFString) == .success else { trace("missing menu"); return false }
+    RunLoop.main.run(until:Date().addingTimeInterval(0.05))
+    var pending = attribute(menu,kAXChildrenAttribute) as? [AXUIElement] ?? [], matches = [AXUIElement](), visited = 0
+    while let item = pending.popLast(), visited < 1000 {
+        visited += 1
+        if attribute(item,kAXRoleAttribute) as? String == "AXMenuItem",
+           attribute(item,kAXTitleAttribute) as? String == title,
+           attribute(item,kAXIdentifierAttribute) as? String == "makeKeyAndOrderFront:" { matches.append(item) }
+        pending += attribute(item,kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+    guard matches.count == 1 else { trace("matches=\(matches.count) title=\(title)"); cancelOfficeMenus(ax); return false }
+    trace("select \(title)")
+    let selected = AXUIElementPerformAction(matches[0],kAXPressAction as CFString) == .success
+    cancelOfficeMenus(ax)
+    RunLoop.main.run(until:Date().addingTimeInterval(0.05))
+    return selected
+}
+
+if CommandLine.arguments.count == 4 && ["--open-document","--open-document-background"].contains(CommandLine.arguments[1]) {
     let identifier = CommandLine.arguments[2]
     let document = URL(fileURLWithPath: CommandLine.arguments[3])
     let applicationURL = identifier.hasPrefix("/") ? URL(fileURLWithPath: identifier) : NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)
@@ -37,7 +91,8 @@ if CommandLine.arguments.count == 4 && CommandLine.arguments[1] == "--open-docum
         exit(2)
     }
     let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = true
+    configuration.activates = CommandLine.arguments[1] == "--open-document"
+    if !configuration.activates { configuration.addsToRecentItems = false }
     var completed = false
     var failure: Error?
     NSWorkspace.shared.open([document], withApplicationAt: application, configuration: configuration) { _, error in
@@ -56,21 +111,97 @@ if CommandLine.arguments.count == 4 && CommandLine.arguments[1] == "--open-docum
 if CommandLine.arguments.count == 4 && ["--activate-office", "--activate-window"].contains(CommandLine.arguments[1]) {
     guard let app = runningApplication(CommandLine.arguments[2]) else { exit(2) }
     let ax = AXUIElementCreateApplication(app.processIdentifier)
+    if app.bundleIdentifier == "com.microsoft.Powerpoint" { cancelOfficeMenus(ax) }
     guard let windows = attribute(ax, kAXWindowsAttribute) as? [AXUIElement] else { exit(2) }
     let expected = CommandLine.arguments[3]
-    let matches = windows.filter { (attribute($0, kAXTitleAttribute) as? String) == expected }
+    var matches = windows.filter { (attribute($0, kAXTitleAttribute) as? String) == expected }
+    if matches.isEmpty, app.bundleIdentifier == "com.microsoft.Powerpoint",
+       ["pptx","pptm","ppt","ppsx","ppsm","pps","potx","potm","pot"].contains((expected as NSString).pathExtension.lowercased()) {
+        let displayTitle = (expected as NSString).deletingPathExtension
+        matches = windows.filter { attribute($0,kAXTitleAttribute) as? String == displayTitle }
+    }
     guard matches.count == 1 else { exit(2) }
+    let displayTitle = attribute(matches[0],kAXTitleAttribute) as? String ?? expected
     app.activate(options: [])
+    RunLoop.main.run(until:Date().addingTimeInterval(0.1))
+    if app.bundleIdentifier == "com.microsoft.Powerpoint" { _ = activatePowerPointWindow(ax,title:displayTitle) }
     AXUIElementSetAttributeValue(matches[0], kAXMinimizedAttribute as CFString, kCFBooleanFalse)
     AXUIElementSetAttributeValue(matches[0], kAXMainAttribute as CFString, kCFBooleanTrue)
+    AXUIElementSetAttributeValue(matches[0], kAXFocusedAttribute as CFString, kCFBooleanTrue)
     guard AXUIElementPerformAction(matches[0], kAXRaiseAction as CFString) == .success else { exit(2) }
+    let deadline = Date().addingTimeInterval(3)
+    while Date() < deadline {
+        let focused = attribute(ax,kAXFocusedWindowAttribute).map { unsafeBitCast($0,to:AXUIElement.self) }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier,
+           (focused.flatMap({ attribute($0,kAXTitleAttribute) as? String }) == displayTitle || attribute(matches[0],kAXMainAttribute) as? Bool == true) { break }
+        RunLoop.main.run(until:Date().addingTimeInterval(0.02))
+    }
     print("activated")
     exit(0)
+}
+if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--reveal-chemdraw" {
+    func failedReveal() -> Never { fputs(L("native.revealDrawing")+"\n",stderr); exit(2) }
+    func rectangle(_ value:Any?) -> CGRect? {
+        guard let values = value as? [Double], values.count == 4,
+              values.allSatisfy({ $0.isFinite && abs($0) < 1_000_000 }), values[2] > 0, values[3] > 0 else { return nil }
+        return CGRect(x:values[0],y:values[1],width:values[2],height:values[3])
+    }
+    let source = URL(fileURLWithPath:CommandLine.arguments[3]).resolvingSymlinksInPath()
+    guard source.lastPathComponent.hasPrefix("CFM-"),
+          let app = runningApplication(CommandLine.arguments[2]),
+          let metadata = try? JSONSerialization.jsonObject(with:Data(CommandLine.arguments[4].utf8)) as? [String:Any],
+          let page = rectangle(metadata["page"]), let drawing = rectangle(metadata["drawing"]), page.contains(drawing),
+          let magnification = metadata["magnification"] as? Double, (1...999).contains(magnification),
+          let windows = attribute(AXUIElementCreateApplication(app.processIdentifier),kAXWindowsAttribute) as? [AXUIElement] else { failedReveal() }
+    let matches = windows.filter { window in
+        guard attribute(window,kAXTitleAttribute) as? String == source.lastPathComponent else { return false }
+        if let value = attribute(window,kAXDocumentAttribute) as? String, let url = URL(string:value), url.isFileURL {
+            return url.resolvingSymlinksInPath().path == source.path
+        }
+        return true
+    }
+    guard matches.count == 1 else { failedReveal() }
+    var pending = [matches[0]], areas = [AXUIElement](), visited = 0
+    while !pending.isEmpty && visited < 200 {
+        let item = pending.removeFirst(); visited += 1
+        if attribute(item,kAXRoleAttribute) as? String == kAXScrollAreaRole { areas.append(item); continue }
+        pending += attribute(item,kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+    guard areas.count == 1, let frame = elementFrame(areas[0]) else { failedReveal() }
+    let scale = magnification/100
+    let viewport = CGSize(width:frame.width/scale,height:frame.height/scale)
+    let bars = (attribute(areas[0],kAXChildrenAttribute) as? [AXUIElement] ?? []).filter { attribute($0,kAXRoleAttribute) as? String == kAXScrollBarRole }
+    for (vertical,minimum,length,start,extent,visible) in [
+        (false,page.minX,page.width,drawing.minX,drawing.width,viewport.width),
+        (true,page.minY,page.height,drawing.minY,drawing.height,viewport.height)
+    ] {
+        let scrollable = max(0,length-visible)
+        if scrollable == 0 { continue }
+        let orientation = vertical ? kAXVerticalOrientationValue:kAXHorizontalOrientationValue
+        guard let bar = bars.first(where:{ attribute($0,kAXOrientationAttribute) as? String == orientation }) else { failedReveal() }
+        let low = (attribute(bar,kAXMinValueAttribute) as? NSNumber)?.doubleValue ?? 0
+        let high = (attribute(bar,kAXMaxValueAttribute) as? NSNumber)?.doubleValue ?? 1
+        let current = (attribute(bar,kAXValueAttribute) as? NSNumber)?.doubleValue ?? low
+        guard high > low else { failedReveal() }
+        let origin = minimum + min(1,max(0,(current-low)/(high-low)))*scrollable
+        if start >= origin && start+extent <= origin+visible { continue }
+        // Large drawings start at their leading edge; small drawings are
+        // centered where the paper bounds allow it. Only the view is scrolled.
+        let desired = extent <= visible ? start+(extent-visible)/2:start-12
+        let fraction = min(1,max(0,(desired-minimum)/scrollable))
+        let target = low+fraction*(high-low)
+        var settable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(bar,kAXValueAttribute as CFString,&settable) == .success, settable.boolValue,
+              AXUIElementSetAttributeValue(bar,kAXValueAttribute as CFString,NSNumber(value:target)) == .success,
+              let actual = (attribute(bar,kAXValueAttribute) as? NSNumber)?.doubleValue,
+              abs(actual-target) <= max(0.01,(high-low)*0.01) else { failedReveal() }
+    }
+    print("revealed"); exit(0)
 }
 if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--focused" {
     let app = NSWorkspace.shared.frontmostApplication
     let ax = app.map { AXUIElementCreateApplication($0.processIdentifier) }
-    let window = ax.flatMap { attribute($0, kAXFocusedWindowAttribute) } as! AXUIElement?
+    let window = (ax.flatMap { attribute($0, kAXFocusedWindowAttribute) } as! AXUIElement?) ?? (ax.flatMap { attribute($0,kAXMainWindowAttribute) } as! AXUIElement?)
     emit(["bundle": app?.bundleIdentifier ?? "none", "title": window.flatMap { attribute($0, kAXTitleAttribute) as? String } ?? "none"])
     exit(0)
 }
@@ -90,8 +221,7 @@ if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--diagnose-p
 guard CommandLine.arguments.count == 2 else { exit(64) }
 let statePath = CommandLine.arguments[1]
 var tap: CFMachPort?
-var swallowPasteMouseUp = false
-var swallowCloseMouseUp = false
+var interceptedClick = InterceptedMouseClick<() -> Void>()
 
 func emit(_ object: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject:object) else { return }
@@ -170,23 +300,53 @@ func serviceCloseWindow(_ point: CGPoint, _ expected: String) -> AXUIElement? {
     return window
 }
 
-func selectedManagedTag(_ host: String) -> String? {
-    if host == "excel", let name = selectedExcelDrawingName() { return name }
+private func scriptLiteral(_ value:String) -> String {
+    "\""+value.replacingOccurrences(of:"\\",with:"\\\\").replacingOccurrences(of:"\"",with:"\\\"").replacingOccurrences(of:"\r",with:"\\r").replacingOccurrences(of:"\n",with:"\\n")+"\""
+}
+func selectedOfficeFigure(_ host: String) -> (tag:String,reference:String?)? {
+    let excelName = host == "excel" ? selectedExcelDrawingName() : nil
     let source: String
     if host == "word" {
         source = """
         tell application id "com.microsoft.Word"
             if (count inline shapes of selection) is not 1 then return ""
-            return alternative text of inline shape 1 of selection
+            set pic to inline shape 1 of selection
+            set tagText to alternative text of pic
+            if inline shape type of pic is inline shape embedded oleobject then
+                set uniqueMarker to false
+                set markerLength to (length of "ChemOffice Drawing:") + 36
+                if tagText starts with "ChemOffice Drawing:" and (length of tagText) >= markerLength then
+                    -- Compare the drawing UUID, even when revision suffixes differ.
+                    set markerPrefix to text 1 thru markerLength of tagText
+                    set markerCount to 0
+                    repeat with otherTag in (get alternative text of every inline shape of active document)
+                        if otherTag is markerPrefix or otherTag starts with markerPrefix & ":" then set markerCount to markerCount + 1
+                    end repeat
+                    set uniqueMarker to markerCount is 1
+                end if
+                if not uniqueMarker then set tagText to "ChemOffice OLE Selection:" & (start of content of text object of pic as string)
+            end if
+            set referenceText to name of active document
+            try
+                set referenceText to POSIX path of ((full name of active document) as alias)
+            end try
+            return {tagText, referenceText}
         end tell
         """
     } else if host == "excel" {
+        let selected = excelName.map { "set selectedName to "+scriptLiteral($0) } ?? "set selectedName to name of (get selection)"
         source = """
         tell application id "com.microsoft.Excel"
             try
-                set selectedObject to get selection
-                set selectedName to name of selectedObject
-                return selectedName
+                \(selected)
+                set pic to shape selectedName of active sheet
+                set tagText to selectedName
+                if shape type of pic is shape type embedded OLE control and tagText does not start with "ChemOffice Drawing:" then
+                    set tagText to "ChemOffice OLE Selection:" & (name of active sheet) & ":" & selectedName
+                end if
+                set referenceText to full name of active workbook
+                if referenceText does not start with "/" then set referenceText to name of active workbook
+                return {tagText, referenceText}
             on error
                 return ""
             end try
@@ -198,7 +358,30 @@ func selectedManagedTag(_ host: String) -> String? {
             try
                 set selectedShapes to shape range of selection of active window
                 if (count shapes of selectedShapes) is not 1 then return ""
-                return name of shape 1 of selectedShapes
+                set pic to shape 1 of selectedShapes
+                set tagText to name of pic
+                set isGroup to shape type of pic is shape type group
+                set p to active presentation
+                if isGroup or shape type of pic is shape type embedded OLE control then
+                    -- Match the panel's selection rules, including copies with different revisions.
+                    set markerCount to 0
+                    set markerLength to (length of "ChemOffice Drawing:") + 36
+                    if tagText starts with "ChemOffice Drawing:" and (length of tagText) >= markerLength then
+                        set markerPrefix to text 1 thru markerLength of tagText
+                        repeat with slideIndex from 1 to count slides of p
+                            repeat with otherTag in (get name of every shape of slide slideIndex of p)
+                                if otherTag is markerPrefix or otherTag starts with markerPrefix & ":" then set markerCount to markerCount + 1
+                            end repeat
+                            if markerCount > 1 then exit repeat
+                        end repeat
+                    end if
+                    if markerCount is not 1 then
+                        set locationTag to "ChemOffice OLE Selection:" & (slide ID of slide of view of active window as string) & ":at:" & (z order position of pic as string) & ":"
+                        if isGroup then set locationTag to locationTag & "group:"
+                        set tagText to locationTag & tagText
+                    end if
+                end if
+                return {tagText, full name of p}
             on error
                 return ""
             end try
@@ -206,11 +389,14 @@ func selectedManagedTag(_ host: String) -> String? {
         """
     }
     var error: NSDictionary?
-    guard let script = NSAppleScript(source: source),
-          let value = script.executeAndReturnError(&error).stringValue,
+    guard let script = NSAppleScript(source: source) else { return nil }
+    let result = script.executeAndReturnError(&error)
+    let reference = result.atIndex(2)?.stringValue
+    guard let value = result.atIndex(1)?.stringValue,
           (value.hasPrefix("ChemOffice Drawing:") ||
+           value.hasPrefix("ChemOffice OLE Selection:") ||
            (host == "word" ? (value.hasPrefix("CFM1:") || value.hasPrefix("CFM2:")) : value.hasPrefix("CFM1_"))) else { return nil }
-    return value
+    return (value,reference)
 }
 
 struct PasteMenuTarget {
@@ -345,16 +531,27 @@ func capturePaste(_ item:(String,Data,Int),host:String,menuPID:pid_t? = nil,menu
 }
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
+    if event.getIntegerValueField(.eventSourceUserData) == nativeOLEReplaySignature { return Unmanaged.passUnretained(event) }
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        interceptedClick.reset()
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
         emit(["event": "tapResumed"])
         return Unmanaged.passUnretained(event)
     }
-    if type == .leftMouseUp && swallowPasteMouseUp { swallowPasteMouseUp = false; return nil }
-    if type == .leftMouseUp && swallowCloseMouseUp { swallowCloseMouseUp = false; return nil }
+    // A missing release, a disabled tap or an app switch must not leave a flag
+    // that steals the release of the next ordinary ChemDraw canvas click.
+    if type == .leftMouseDown { interceptedClick.reset() }
+    if type == .keyDown && event.getIntegerValueField(.keyboardEventKeycode) == 53 { interceptedClick.reset() }
     let targetPID = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
     let recipient = targetPID > 0 ? NSRunningApplication(processIdentifier: targetPID) : nil
-    guard let front = recipient ?? NSWorkspace.shared.frontmostApplication,
+    let target = recipient ?? NSWorkspace.shared.frontmostApplication
+    if type == .leftMouseUp {
+        let release = interceptedClick.release(targetPID:target?.processIdentifier ?? targetPID,
+                                               eventNumber:event.getIntegerValueField(.mouseEventNumber))
+        if let action = release.action { DispatchQueue.main.async(execute:action) }
+        return release.suppress ? nil : Unmanaged.passUnretained(event)
+    }
+    guard let front = target,
           let bundle = front.bundleIdentifier else { return Unmanaged.passUnretained(event) }
     if type == .leftMouseDown && ProcessInfo.processInfo.environment["CFM_DIAGNOSTICS"] == "1" {
         emit(["event":"paste_pointer","bundle":bundle,"front":NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "",
@@ -367,8 +564,10 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     if type == .leftMouseDown || type == .rightMouseDown,
        OfficeHost(bundle:bundle) != nil, chemicalClipboard() != nil {
         if type == .leftMouseDown, let menu = cachedPasteMenu(at:event.location,pid:front.processIdentifier) ?? directPasteMenu(at:event.location,pid:front.processIdentifier), let item = chemicalClipboard() {
-            swallowPasteMouseUp = true
-            capturePaste(item,host:OfficeHost(bundle:bundle)!.rawValue,menuPID:front.processIdentifier,menu:menu.menu)
+            let host = OfficeHost(bundle:bundle)!.rawValue, pid = front.processIdentifier
+            interceptedClick.intercept(targetPID:pid,eventNumber:event.getIntegerValueField(.mouseEventNumber)) {
+                capturePaste(item,host:host,menuPID:pid,menu:menu.menu)
+            }
             return nil
         }
         if type == .leftMouseDown { invalidatePasteMenu() }
@@ -388,8 +587,18 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     if type == .leftMouseDown && event.getIntegerValueField(.mouseEventClickState) == 2,
        OfficeHost(bundle:bundle) != nil {
         let host = OfficeHost(bundle:bundle)!.rawValue
-        if let tag = selectedManagedTag(host) {
-            emit(["event": "open", "host": host, "tag": tag])
+        if let selected = selectedOfficeFigure(host) {
+            var request: [String:Any] = ["event":"open","host":host,"tag":selected.tag]
+            if let reference = selected.reference { request["reference"] = reference }
+            if selected.tag.hasPrefix("ChemOffice OLE Selection:") {
+                guard event.flags.intersection([.maskCommand,.maskControl,.maskAlternate,.maskShift]).isEmpty,
+                      let data = event.data else { return Unmanaged.passUnretained(event) }
+                request["nativeOLEEvent"] = (data as Data).base64EncodedString()
+            }
+            let captured = request
+            interceptedClick.intercept(targetPID:front.processIdentifier,eventNumber:event.getIntegerValueField(.mouseEventNumber)) {
+                emit(captured)
+            }
             return nil
         }
     }
@@ -419,10 +628,12 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     // dialogs responsive, and queue a close behind any in-flight save.
     let closeClick = type == .leftMouseDown && closeButtonContains(window, event.location)
     if closeKey || closeClick {
-        if closeClick { swallowCloseMouseUp = true }
-        if !closeKey || event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-            emit(["event": "close", "gesture": closeKey ? "command-w" : "red-button",
-                  "id":current["id"] as? String ?? "","path":current["path"] as? String ?? ""])
+        let request: [String:Any] = ["event": "close", "gesture": closeKey ? "command-w" : "red-button",
+                                   "id":current["id"] as? String ?? "","path":current["path"] as? String ?? ""]
+        if closeClick {
+            interceptedClick.intercept(targetPID:front.processIdentifier,eventNumber:event.getIntegerValueField(.mouseEventNumber)) { emit(request) }
+        } else if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+            emit(request)
         }
         return nil
     }

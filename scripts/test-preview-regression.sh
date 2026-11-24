@@ -5,7 +5,7 @@ set -euo pipefail
 CFM_MANIFEST="${1:A}"
 cd "${0:A:h:h}"
 CFM_SOURCES=()
-for CFM_SOURCE in NativeLocalization NativeStrings OfficeHost NativeExcelSelection NativePaths NativeCore ChemDrawDiscovery NativePDFVector NativeAutomation NativeBridge NativeSavedChanges; do
+for CFM_SOURCE in NativeLocalization NativeStrings OfficeHost NativeExcelSelection NativePaths NativeCore NativeOLE ChemDrawDiscovery NativePDFVector NativeAutomation NativeBridge NativeSavedChanges; do
     CFM_SOURCES+=("src/$CFM_SOURCE.swift")
 done
 source scripts/signing.sh

@@ -25,9 +25,9 @@ ChemDraw Add-in for Mac 支持将化学结构粘贴到 Mac 版 Word、PowerPoint
 
 ## 已有文档中的结构怎么处理
 
-已发布的 **1.5.7** 版本编辑通过本加载项粘贴的绘图。处理已有文档时，可以先在 ChemDraw 中取得可编辑结构，再通过加载项粘贴，生成可双击编辑的绘图。
+**2.0.1** 支持双击已有的 **Windows ChemDraw OLE 对象**，在 Mac ChemDraw 中编辑。按 ⌘S 或使用菜单“保存”，结构和预览会同步回原 Office 文档，编辑窗口保持打开。
 
-读取和回写已有的 **Windows ChemDraw OLE 对象**正在 [2.0 开发分支](https://github.com/BoeingART/chemdraw-add-in-for-mac/tree/dev-2.0)推进。使用 Windows 创建的文档前，可查看该分支当前支持的 Office 应用及验证记录。
+Word 和 PowerPoint 已有实机验证记录。Excel 已通过文件格式和事务检查，实机测试仍待完成。详见[2.0.1 功能与验证说明](../README_CN.md#201-版本)。
 
 只有 PNG、截图等图像文件时，先取得或在 ChemDraw 中重建可编辑结构，再使用上述粘贴流程。
 

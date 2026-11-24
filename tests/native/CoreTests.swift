@@ -20,6 +20,21 @@ import Cocoa
             try require(try encodeSource(source,id:id) == old,"Wire format changed")
         }
         let cdx = try Data(contentsOf:root.appendingPathComponent("tests/fixtures/clipboard-ethanol.cdx"))
+        try check("Native later-page viewport metadata retains the drawing and its complete paper bounds") {
+            let file = root.appendingPathComponent("tests/fixtures/ole-cases/late-page-native.cdx")
+            let source = try Data(contentsOf:file), settings = try ChemDrawSourceSettings(source)
+            guard let drawing = settings.drawingBounds, let page = settings.pageBounds else { throw ChemOfficeError("Missing native viewport bounds") }
+            try require(drawing.minY > 11000 && drawing.minX > 1300 && page.contains(drawing),"Native viewport used the wrong coordinate order or a single paper tile")
+            try require(page.width == 1569 && page.height == 11550,"Native viewport lost the complete page grid")
+            try require(try Data(contentsOf:file) == source,"Reading viewport metadata altered the drawing")
+        }
+        try check("CDXML viewport bounds retain signed coordinates and reject inverted rectangles") {
+            let source = Data("<CDXML BoundingBox=\"-10 -20 30 40\"><page BoundingBox=\"-100 -200 100 200\"/></CDXML>".utf8)
+            let settings = try ChemDrawSourceSettings(source)
+            try require(settings.drawingBounds == CGRect(x:-10,y:-20,width:40,height:60) && settings.pageBounds == CGRect(x:-100,y:-200,width:200,height:400),"CDXML viewport coordinates changed")
+            let invalid = try ChemDrawSourceSettings(Data("<CDXML BoundingBox=\"0 0 -10 10\"><page/></CDXML>".utf8))
+            try require(invalid.drawingBounds == nil && invalid.pageBounds == nil,"Invalid viewport geometry was normalized into a valid target")
+        }
         try check("Render-only CDX copies change print counts without changing objects or drawing settings") {
             var paged = cdx, offset = 22, depth = 0, changed = Set<Int>()
             while offset < paged.count {
@@ -57,7 +72,7 @@ import Cocoa
             let source = Data("<CDXML BondLength=\"21\"><page WidthPages=\"3\" HeightPages=\"15\"><fragment><n id=\"2\" p=\"900 31000\"/></fragment></page></CDXML>".utf8)
             let preview = try xml(unpaginatedPreviewSource(source)), page = try nodes(preview,"/CDXML/page")[0]
             try require(attribute(page,"WidthPages") == "1" && attribute(page,"HeightPages") == "1","Preview still paginates")
-            try require(attribute(page,"DrawingSpace") == "Poster" && Double(attribute(page,"Height"))! > 31000,"Poster canvas clips later-page artwork")
+            try require(attribute(page,"DrawingSpace") == "poster" && Double(attribute(page,"Height"))! > 31000,"Poster canvas clips later-page artwork")
             try require(attribute(try nodes(page,"./fragment/n")[0],"p") == "900 31000","Preview moved later-page artwork")
             try require(try attribute(xml(source).rootElement()!,"BondLength") == "21","Preview changed original defaults")
         }

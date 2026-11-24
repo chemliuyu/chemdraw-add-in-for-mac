@@ -23,9 +23,22 @@ class NativeMonitorRuntime {
             try bridge.handle(event)
             if tracked { activity.end(editing:bridge.editingOpen,recoverable:bridge.session != nil && !bridge.editingOpen) }
         } catch {
-            if tracked { activity.end(editing:bridge.editingOpen,recoverable:bridge.session != nil && !bridge.editingOpen,error:error.localizedDescription) }
-            bridge.record("error",["operation":name,"message":error.localizedDescription])
-            throw error
+            var failure = error
+            if error is UnsupportedChemDrawOLE, name == "open", let host = event["host"] as? String, OfficeHost(rawValue:host) != nil,
+               let nativeEvent = event["nativeOLEEvent"] as? String,
+               let reference = event["reference"] as? String, let tag = event["tag"] as? String {
+                // Leave foreign OLE activation to its Office host, only while the
+                // original document and object are still selected.
+                do {
+                    try command(bridge.root.appendingPathComponent("build/event-monitor").path,["--native-ole-open",nativeEvent,reference,tag,host])
+                    if tracked { activity.end(editing:bridge.editingOpen,recoverable:bridge.session != nil && !bridge.editingOpen) }
+                    bridge.record("native_ole_passthrough",["host":host])
+                    return
+                } catch { failure = error }
+            }
+            if tracked { activity.end(editing:bridge.editingOpen,recoverable:bridge.session != nil && !bridge.editingOpen,error:failure.localizedDescription) }
+            bridge.record("error",["operation":name,"message":failure.localizedDescription])
+            throw failure
         }
     }
     func pasteClipboard(_ host:String) throws {
@@ -167,6 +180,14 @@ class NativeMonitorRuntime {
         }
         do {
             switch args.first {
+            case "script-worker": try NativeAppleScriptWorker.serve()
+            case "ole-extract":
+                try require(args.count == 3,L("ole.usage"))
+                let source = try ChemDrawOLE.powerPointSource(URL(fileURLWithPath:args[1]))
+                try source.write(to:URL(fileURLWithPath:args[2]),options:.withoutOverwriting)
+                print(L("ole.exported",args[2]))
+            case "ole-export", "ole-new":
+                try exportOLE(root:root,arguments:args)
             case "apply-update":
                 try require(args.count == 2,L("update.contents"))
                 try NativeAppUpdate.apply(URL(fileURLWithPath:args[1]))
@@ -185,5 +206,29 @@ class NativeMonitorRuntime {
             }
             FileHandle.standardError.write(Data(("ChemDraw Add-in for Mac: "+error.localizedDescription+"\n").utf8)); exit(1)
         }
+    }
+    static func exportOLE(root:URL,arguments args:[String]) throws {
+        let create = args[0] == "ole-new"
+        try require(args.count == (create ? 3 : 4),L("ole.usage"))
+        let sourceURL = URL(fileURLWithPath:args[create ? 1 : 2]), output = URL(fileURLWithPath:args[create ? 2 : 3])
+        try require(!FileManager.default.fileExists(atPath:output.path),L("ole.newOutput"))
+        let source = try Data(contentsOf:sourceURL); try validateSource(source)
+        try require(source.starts(with:Data("VjCD0100".utf8)),L("ole.cdx"))
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("CFM-OLE-Export-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:temporary,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+        defer { try? FileManager.default.removeItem(at:temporary) }
+        let snapshot = temporary.appendingPathComponent("source.cdx"), vector = temporary.appendingPathComponent("preview.svg")
+        try source.write(to:snapshot,options:.atomic)
+        try NativeAutomation(root:root).renderVector(snapshot,vector)
+        let svg = try Data(contentsOf:vector), png = try renderPNG(svg), id = UUID().uuidString.lowercased()
+        let data:Data
+        if create {
+            data = try ChemDrawOLE.transport(template:root.appendingPathComponent("assets/ole-transport.pptx"),object:ChemDrawOLE.create(source:source,preview:png),vector:svg,id:id,marker:figureMarker(id,source:source))
+        } else { data = try ChemDrawOLE.replacePowerPointFigure(URL(fileURLWithPath:args[1]),source:source,vector:svg,id:id) }
+        let staged = temporary.appendingPathComponent("verified.pptx")
+        try data.write(to:staged,options:.atomic)
+        _ = try verifySavedFigure(staged.path,host:"powerpoint",id:id,source:source,expected:png)
+        try data.write(to:output,options:.withoutOverwriting)
+        print(L("ole.exported",output.path))
     }
 }

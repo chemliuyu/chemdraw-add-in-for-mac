@@ -65,6 +65,17 @@ class NativeBridge {
         return marker
     }
     func payload(_ host:String, _ document:String, _ id:String, marker:String? = nil) throws -> String {
+        if automation.supportsNativeOLE(in:host) {
+            if host == "powerpoint" {
+                // Capture classifies and reads the same indexed object in one
+                // Office request. Pictures continue through their carrier path.
+                if let object = try automation.captureEditableOLE(document,target:id,host:host) {
+                    return try encodeSource(CompoundFile(object).chemdrawSource(),id:id)
+                }
+            } else if ["ole","group"].contains(try automation.office("ole-kind",host,[document,id])) {
+                return try encodeSource(CompoundFile(automation.captureOLE(document,target:id,host:host)).chemdrawSource(),id:id)
+            }
+        }
         let tag = try marker ?? automation.office("payload",host,[document,id])
         if tag.hasPrefix("CFM1:") || tag.hasPrefix("CFM2:") { return tag }
         try require(try objectID(tag) == id,L("native.128"))
@@ -85,6 +96,7 @@ class NativeBridge {
         return saved.tag
     }
     func verifyOpenFigure(_ document:String, host:String, id:String, source:Data, expected:Data) throws -> [String:Any] {
+        if let evidence = try automation.verifiedOLETransfer(document,id:id,source:source,expected:expected,host:host) { return evidence }
         let fields = try automation.office("inspect",host,[document,id]).components(separatedBy:"\t")
         try require(fields.count == 3,L("native.132"))
         let envelope = try payload(host,document,id,marker:fields[0])
@@ -142,8 +154,14 @@ class NativeBridge {
         let expected = try renderPNG(vector), carrier = try createCarrier(source,id:id,vector:vector)
         try expected.write(to:snapshot.appendingPathComponent("preview.png"))
         try carrier.svg.write(to:snapshot.appendingPathComponent("figure.svg"))
-        let marker = try cacheFigure(carrier.svg), preview = try officePreview(host,carrier.svg)
-        _ = try automation.office("insert",host,[preview.path,marker,id,document,String(try svgAspect(carrier.svg))])
+        let marker = try cacheFigure(carrier.svg)
+        if automation.supportsNativeOLE(in:host) && automation.supportsNativeOLEWrite && source.starts(with:Data("VjCD0100".utf8)) {
+            let object = try ChemDrawOLE.create(source:source,preview:expected)
+            try automation.transferOLE("ole-insert",arguments:[document,id,marker,String(try svgAspect(carrier.svg))],object:object,vector:vector,host:host)
+        } else {
+            let preview = try officePreview(host,carrier.svg)
+            _ = try automation.office("insert",host,[preview.path,marker,id,document,String(try svgAspect(carrier.svg))])
+        }
         let evidence = try verify(document,host,id,source,expected)
         try JSONSerialization.data(withJSONObject:evidence,options:[.prettyPrinted,.sortedKeys]).write(to:snapshot.appendingPathComponent("verification.json"))
         record("pasted",["host":host,"document":document,"drawing_id":id,"source_sha256":sha256(source),"portable_carrier":true])
@@ -157,8 +175,20 @@ class NativeBridge {
         record("closed_session_retained",["drawing_id":previous.id,"recovery":recovery.path])
         session = nil; editingOpen = false; try writeState()
     }
-    func begin(_ host:String, tag:String) throws {
-        let document = try automation.office("context",host,[UUID().uuidString.lowercased()]), requestedID = try objectID(tag)
+    func begin(_ host:String, tag:String, reference:String? = nil) throws {
+        let rawOLE = automation.supportsNativeOLE(in:host) && tag.hasPrefix("ChemOffice OLE Selection:")
+        // Classify before assigning document/shape markers or disturbing an
+        // existing draft. Foreign OLE objects keep Office's native activation.
+        var originalOLE: Data?
+        var capturedSource: Data?
+        let document: String
+        if rawOLE {
+            let target = try reference ?? automation.office("reference",host,[])
+            let object = try automation.captureOLE(target,target:tag,host:host)
+            capturedSource = try CompoundFile(object).chemdrawSource(); originalOLE = object
+            document = try automation.office("context",host,[UUID().uuidString.lowercased(),target])
+        } else { document = try automation.office("context",host,[UUID().uuidString.lowercased()]+(reference.map { [$0] } ?? [])) }
+        let requestedID = rawOLE ? UUID().uuidString.lowercased() : try objectID(tag)
         _ = try reconcileDocumentLifecycle(confirmImmediately:true)
         if let previous = session {
             let path = URL(fileURLWithPath:previous.path)
@@ -171,7 +201,14 @@ class NativeBridge {
             }
             try archiveSession(previous)
         }
-        let envelope = tag.hasPrefix("CFM1:") || tag.hasPrefix("CFM2:") ? tag : try payload(host,document,requestedID)
+        let envelope: String
+        if rawOLE {
+            let source = capturedSource!
+            envelope = try encodeSource(source,id:requestedID)
+            _ = try automation.office("ole-claim",host,[document,tag,figureMarker(requestedID,source:source)])
+        } else {
+            envelope = tag.hasPrefix("CFM1:") || tag.hasPrefix("CFM2:") ? tag : try payload(host,document,requestedID)
+        }
         let decoded = try decodeSource(envelope)
         try require(decoded.id == requestedID,L("native.139"))
         let app = try automation.preferredApplication()
@@ -181,12 +218,13 @@ class NativeBridge {
         let path = directory.appendingPathComponent("CFM-\(decoded.id).\(ext)")
         try decoded.source.write(to:path)
         try decoded.source.write(to:directory.appendingPathComponent("original."+ext))
+        if let originalOLE { try originalOLE.write(to:directory.appendingPathComponent("original.ole")) }
         session = EditingSession(host:host,document:document,id:decoded.id,path:path.path,originalTag:envelope,windowTitle:path.lastPathComponent,chemBundle:app.bundle,busy:false,chemApplication:app)
         session?.syncedSourceRevision = sha256(decoded.source)
         try writeState()
         try automation.open(path)
         editingOpen = true
-        record("opened",["host":host,"document":document,"drawing_id":decoded.id,"chem_version":app.version,"chem_path":app.path])
+        record("opened",["host":host,"document":document,"drawing_id":decoded.id,"entry":rawOLE ? "native-ole" : "managed","source_bytes":decoded.source.count,"chem_version":app.version,"chem_path":app.path])
     }
     func finish(_ gesture:String) throws {
         while try synchronize(gesture,closing:true,savedSource:nil) { /* Flush a newer native save made during export. */ }
@@ -266,6 +304,11 @@ class NativeBridge {
             else if try automation.isOpen(path) { source = try automation.saveSource(path) }
             else { source = try Data(contentsOf:path) }
             try validateSource(source)
+            if automation.supportsNativeOLE(in:current.host), !automation.supportsNativeOLEWrite,
+               try automation.office("ole-kind",current.host,[current.document,current.id]) == "ole",
+               current.syncedSourceRevision != sha256(source) {
+                throw ChemOfficeError(L("ole.writeDisabled"))
+            }
             if closing && current.syncedSourceRevision == sha256(source) {
                 if try !closeSavedEditor(path,source:source) {
                     current.busy = false; session = current; try writeState()
@@ -284,13 +327,22 @@ class NativeBridge {
             let expected = try Data(contentsOf:image)
             try require(expected.starts(with:[137,80,78,71,13,10,26,10]),L("native.142"))
             let newTag = try encodeSource(source,id:current.id)
-            let oldTag = try payload(current.host,current.document,current.id)
+            let nativeOLE = automation.supportsNativeOLE(in:current.host) && automation.supportsNativeOLEWrite && source.starts(with:Data("VjCD0100".utf8))
+            let original = nativeOLE ? try automation.captureEditableOLE(current.document,target:current.id,host:current.host) : nil
+            let oldTag = try original.map { try encodeSource(CompoundFile($0).chemdrawSource(),id:current.id) }
+                ?? payload(current.host,current.document,current.id)
             try require(oldTag == current.originalTag || oldTag == newTag,L("native.143"))
             let vector = try Data(contentsOf:image.deletingPathExtension().appendingPathExtension("svg"))
             let carrier = try createCarrier(source,id:current.id,vector:vector)
             try carrier.svg.write(to:directory.appendingPathComponent("figure-\(UUID().uuidString).svg"))
-            let marker = try cacheFigure(carrier.svg), preview = try officePreview(current.host,carrier.svg)
-            _ = try automation.office("update",current.host,[current.document,current.id,preview.path,marker,String(try svgAspect(carrier.svg))])
+            let marker = try cacheFigure(carrier.svg)
+            if nativeOLE {
+                let object = try ChemDrawOLE.create(source:source,preview:expected,original:original)
+                try automation.transferOLE("ole-update",arguments:[current.document,current.id,marker,String(try svgAspect(carrier.svg))],object:object,vector:vector,host:current.host)
+            } else {
+                let preview = try officePreview(current.host,carrier.svg)
+                _ = try automation.office("update",current.host,[current.document,current.id,preview.path,marker,String(try svgAspect(carrier.svg))])
+            }
             current.originalTag = newTag; session = current; try writeState()
             let evidence = try verify(current.document,current.host,current.id,source,expected)
             try JSONSerialization.data(withJSONObject:evidence,options:[.prettyPrinted,.sortedKeys]).write(to:directory.appendingPathComponent("verification.json"))
@@ -322,7 +374,7 @@ class NativeBridge {
     }
     func handle(_ event:[String:Any]) throws {
         switch event["event"] as? String {
-        case "open": try begin(event["host"] as? String ?? "",tag:event["tag"] as? String ?? "")
+        case "open": try begin(event["host"] as? String ?? "",tag:event["tag"] as? String ?? "",reference:event["reference"] as? String)
         case "edit-selection":
             let host = event["host"] as? String ?? "", tag = try automation.office("selected",host,[])
             try require(!tag.isEmpty,L("native.145"))

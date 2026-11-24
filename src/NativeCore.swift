@@ -16,10 +16,11 @@ func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw ChemOfficeError(message) }
 }
 func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
-func xml(_ data: Data) throws -> XMLDocument {
+func xml(_ data: Data, preserveWhitespace: Bool = false) throws -> XMLDocument {
     try require(data.count <= maxCarrierBytes, L("native.150"))
     try require(data.range(of: Data("<!ENTITY".utf8)) == nil, L("native.151"))
-    let document = try XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever])
+    let options: XMLNode.Options = preserveWhitespace ? [.nodeLoadExternalEntitiesNever,.nodePreserveWhitespace] : [.nodeLoadExternalEntitiesNever]
+    let document = try XMLDocument(data:data,options:options)
     document.dtd = nil
     return document
 }
@@ -62,7 +63,6 @@ func validateSource(_ source: Data) throws {
     if source.starts(with: Data("VjCD0100".utf8)) && source.count >= 30 { return }
     try require(try xml(source).rootElement()?.name == "CDXML", L("native.156"))
 }
-
 // Clipboard CDX is a document: its drawing defaults and page grid belong to the
 // captured structure, rather than the current ChemDraw application's defaults.
 func unpaginatedPreviewSource(_ source:Data) throws -> Data {
@@ -139,7 +139,9 @@ func unpaginatedPreviewSource(_ source:Data) throws -> Data {
         if p.count == 2 { maxX = max(maxX,p[0]); maxY = max(maxY,p[1]) }
     }
     for page in pages {
-        for (key,value) in [("WidthPages","1"),("HeightPages","1"),("DrawingSpace","Poster"),("Width",String(max(100,ceil(maxX+8)))),("Height",String(max(100,ceil(maxY+8))))] {
+        // ChemDraw 22's CDXML reader accepts the lowercase enum spelling.
+        // "Poster" silently retains page clipping and loses later-page objects.
+        for (key,value) in [("WidthPages","1"),("HeightPages","1"),("DrawingSpace","poster"),("Width",String(max(100,ceil(maxX+8)))),("Height",String(max(100,ceil(maxY+8))))] {
             page.removeAttribute(forName:key); page.addAttribute(XMLNode.attribute(withName:key,stringValue:value) as! XMLNode)
         }
     }
@@ -150,11 +152,17 @@ func unpaginatedPreviewSource(_ source:Data) throws -> Data {
 
 struct ChemDrawSourceSettings {
     var columns = 1
+    var drawingBounds: CGRect?
+    var pageBounds: CGRect?
     var printMargins = NSEdgeInsets()
     var numbers = [String:Int]()
     var fonts = [String:String]()
     init(_ source:Data) throws {
         var values = [String:String]()
+        func rectangle(_ values:[Double]) -> CGRect? {
+            guard values.count == 4, values.allSatisfy({ $0.isFinite && abs($0) < 1_000_000 }), values[2] > values[0], values[3] > values[1] else { return nil }
+            return CGRect(x:values[0],y:values[1],width:values[2]-values[0],height:values[3]-values[1])
+        }
         if source.starts(with:Data("VjCD0100".utf8)) {
             var offset = 22, depth = 0, root = [Int:Data](), page = [Int:Data]()
             var firstPage = false, inFirstPage = false
@@ -177,6 +185,13 @@ struct ChemDrawSourceSettings {
                 }
             }
             if let width = page[0x080f], width.count == 2 { columns = max(1,try width.integer(0,2)) }
+            func binaryRectangle(_ data:Data?) throws -> CGRect? {
+                guard let data, data.count == 16 else { return nil }
+                let v = try stride(from:0,to:16,by:4).map { Double(Int32(bitPattern:UInt32(try data.integer($0,4))))/65536 }
+                return rectangle([v[1],v[0],v[3],v[2]])
+            }
+            drawingBounds = try binaryRectangle(root[0x0204])
+            pageBounds = try binaryRectangle(page[0x0204])
             if let data = root[0x0802], data.count == 16 {
                 values["PrintMargins"] = try stride(from:0,to:16,by:4).map { String(Double(try data.integer($0,4))/65536) }.joined(separator:" ")
             }
@@ -209,7 +224,11 @@ struct ChemDrawSourceSettings {
         } else {
             guard let document = try xml(source).rootElement() else { throw ChemOfficeError(L("native.156")) }
             for node in document.attributes ?? [] { values[node.name ?? ""] = node.stringValue }
-            if let page = try nodes(document,"./page").first { columns = max(1,Int(attribute(page,"WidthPages")) ?? 1) }
+            drawingBounds = rectangle(attribute(document,"BoundingBox").split(whereSeparator:{ $0.isWhitespace }).compactMap { Double($0) })
+            if let page = try nodes(document,"./page").first {
+                columns = max(1,Int(attribute(page,"WidthPages")) ?? 1)
+                pageBounds = rectangle(attribute(page,"BoundingBox").split(whereSeparator:{ $0.isWhitespace }).compactMap { Double($0) })
+            }
             let table = try nodes(document,"./fonttable/font")
             for key in ["LabelFont","CaptionFont"] {
                 if let font = table.first(where:{ attribute($0,"id") == values[key] }) { values[key] = attribute(font,"name") }
@@ -489,6 +508,8 @@ struct SavedFigure {
 }
 func readSavedFigure(_ document: String, host: String, id: String) throws -> SavedFigure {
     let archive = try OfficeArchive(URL(fileURLWithPath:document))
+    if host == "word", let native = try ChemDrawOLE.savedWordFigure(archive,id:id) { return native }
+    if host == "excel", let native = try ChemDrawOLE.savedExcelFigure(archive,id:id) { return native }
     let prefix = host == "excel" ? "xl/drawings/drawing" : "ppt/slides/slide"
     let parts = host == "word" ? ["word/document.xml"] : archive.entries.keys.filter { $0.hasPrefix(prefix) && $0.hasSuffix(".xml") }
     var candidates = [(String,XMLElement,String)]()
@@ -509,11 +530,18 @@ func readSavedFigure(_ document: String, host: String, id: String) throws -> Sav
             }
         } else {
             var tag = ""
+            for frame in try nodes(root,"//*[local-name()='graphicFrame']") {
+                guard let properties = try nodes(frame,"./*[local-name()='nvGraphicFramePr']/*[local-name()='cNvPr']").first else { continue }
+                let name = attribute(properties,"name")
+                if name == "ChemOffice Drawing:\(id)" || name.hasPrefix("ChemOffice Drawing:\(id):") { candidates.append((part,frame,name)) }
+            }
             for shape in try nodes(root,"//*[local-name()='sp']") {
                 let name = try nodes(shape,"./*[local-name()='nvSpPr']/*[local-name()='cNvPr']").first.map { attribute($0,"name") }
                 if name == "CFM_DATA_\(id)" { tag = try nodes(shape,".//*[local-name()='t']").map { $0.stringValue ?? "" }.joined() }
             }
-            for picture in try nodes(root,"//*[local-name()='pic']") {
+            // PowerPoint copies the frame's name onto the OLE preview picture
+            // when saving. That nested picture belongs to the same object.
+            for picture in try nodes(root,"//*[local-name()='pic' and not(ancestor::*[local-name()='graphicFrame'])]") {
                 let name = try nodes(picture,"./*[local-name()='nvPicPr']/*[local-name()='cNvPr']").first.map { attribute($0,"name") }
                 if let name, name == "CFM1_\(id)" || name == "ChemOffice Drawing:\(id)" || name.hasPrefix("ChemOffice Drawing:\(id):") { candidates.append((part,picture,name.hasPrefix("ChemOffice Drawing:\(id):") ? name : tag)) }
             }
@@ -536,6 +564,22 @@ func readSavedFigure(_ document: String, host: String, id: String) throws -> Sav
     }
     let target = segments.joined(separator:"/")
     let preview = try archive.read(target), portable = svgBlip != nil || target.lowercased().hasSuffix(".svg")
+    if let ole = try nodes(drawing,".//*[local-name()='oleObj']").first {
+        let relationships = try nodes(xml(archive.read(relPath)),"//*[local-name()='Relationship']").filter {
+            attribute($0,"Id") == localAttribute(ole,"id") && attribute($0,"TargetMode") != "External" && attribute($0,"Type").hasSuffix("/oleObject")
+        }
+        try require(relationships.count == 1,L("native.221"))
+        let rawOLE = attribute(relationships[0],"Target")
+        let base = URL(fileURLWithPath:"/"+directory,isDirectory:true)
+        let olePart = URL(fileURLWithPath:rawOLE,relativeTo:base).standardizedFileURL.path.dropFirst()
+        let source = try CompoundFile(archive.read(String(olePart))).chemdrawSource()
+        if let revision = try figureRevision(metadata) { try require(sha256(source) == revision,L("native.223")) }
+        let extent = try nodes(drawing,"./*[local-name()='xfrm']/*[local-name()='ext']").first
+        let dimensions: [Double] = extent.map { [Double(attribute($0,"cx")) ?? 0.0,Double(attribute($0,"cy")) ?? 0.0] } ?? []
+        return SavedFigure(tag:try encodeSource(source,id:id),source:source,preview:preview,
+            evidence:["ole_object":true,"prog_id":attribute(ole,"progId"),"source_bytes":source.count,"verified_part":part,"embedded_part":String(olePart),"preview_part":target,"display_size_emu":dimensions],
+            aspect:nil,dimensions:dimensions)
+    }
     let tag = portable ? try readCarrier(preview) : metadata
     let decoded = try decodeSource(tag)
     if let revision = try figureRevision(metadata) { try require(sha256(decoded.source) == revision,L("native.223")) }

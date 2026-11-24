@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.1 — 2026-11-11
+
+- First stable release in the 2.0 series, bringing native ChemDraw OLE paste and editing to Office for Mac. Word and PowerPoint have live application checks; Excel has file-format and transaction checks, with application testing pending.
+
+- Fix opening and saving identical ChemDraw OLE copies pasted in PowerPoint. Each selected copy gets its own editing identity when PowerPoint has retained the same marker.
+- Fix the in-app update architecture check so signed updates can finish installation and relaunch.
+
+## v2.0.0-beta — 2026-11-07
+
+- Publish the 2.0 beta as a GitHub prerelease with universal Mac installation and application ZIP packages. Keep the stable release selected for automatic updates.
+
+- Speed up PowerPoint drawing opening and save synchronization by batching shape lookups and reusing captured object properties. Keep document and object identity checks, native source and preview verification, and recovery of pending edits.
+
+- Wait for the matching mouse release before opening a drawing, pasting from an Office menu or closing the managed drawing. Clear interrupted click state so switching applications cannot swallow a ChemDraw canvas release.
+
+- Create Word save-staging documents without a visible window to prevent temporary drawings from flashing during synchronization.
+- Finish failed-save recovery after Word has restored the original drawing, and close its temporary document.
+
+- Open and save a ChemDraw OLE drawing inside a PowerPoint group while retaining companion pictures, cropped artwork, captions and stacking order. Keep the ChemDraw editor open and leave saving the presentation to the user.
+- Preserve whitespace-only text runs when rewriting PowerPoint drawings so caption spacing survives updates.
+
+- Update Word OLE drawings at their original position without a temporary duplicate or layout jump. Prepare the new size in a hidden document and restore the original source and preview if verification fails.
+- Reuse Word document lookup after validating the complete open-document list and stable identity; refresh it when documents are opened, closed or saved under another name.
+
+- Paste CDX structures as native ChemDraw OLE objects in Word and Excel, and retain OLE storage during edits and save synchronization. Word imports a bookmarked object range without changing surrounding text or opening a transport window.
+- Recognize unmarked embedded ChemDraw objects in Word and Excel and preserve the host application's handling of other OLE objects. Word has passed live paste/edit/save checks; Excel file-format and transaction checks are covered, with application testing pending.
+
+- Speed up PowerPoint OLE save synchronization with a warm background preview renderer, batched Office operations and validated document lookup reuse. Keep ChemDraw in front while loading and closing the temporary OLE transport in the background.
+- Preserve rounded-box shadow cutouts in previews on macOS 13 and later.
+
+- Handle original unmarked Windows ChemDraw OLE double-clicks before PowerPoint's system OLE activation. Classify source in the transaction worker and retain native handling for foreign OLE objects without changing document markers or drafts.
+- Add PowerPoint file experiments for extracting Windows ChemDraw OLE drawings, editing their CDX source in Mac ChemDraw, and exporting presentation copies with Windows ChemDraw OLE objects and vector previews.
+- Add commands to extract a drawing, export an edited presentation copy, and create a new OLE presentation from a Mac CDX file. Existing output files are retained.
+- Enable native PowerPoint OLE paste and automatic write-back on ChemDraw Command-S and menu Save. Keep the editor open and preserve subsequent input using independent saved snapshots.
+- Resolve the target by its stable document identity and presentation name. Use direct shape copy and verified native paste, including unsaved presentations and switching between documents; retain the original until the new OLE source is read back successfully.
+- Recognize PowerPoint's saved OLE preview as part of its containing object.
+
 ## v1.5.7 — 2026-11-02
 
 - Fix clipped and repeated previews from multi-page ChemDraw documents. Render on a continuous private canvas while preserving object coordinates, cross-page spacing and the original editable source.

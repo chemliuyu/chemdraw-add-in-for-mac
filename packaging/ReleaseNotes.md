@@ -1,17 +1,29 @@
-## ChemDraw Add-in for Mac 1.5.7 · Build 28
+# ChemDraw Add-in for Mac 2.0.1
 
-### 中文
+## 中文
 
-- 修复结构预览被截断、重复和留下大片空白的问题，保留多页文档中结构的相对位置。
-- 打开编辑时恢复结构自身的键长、线宽、字体和字号等设置，保留Nature等模板及自定义格式；返回已打开的编辑窗口时保留后续修改。
-- 改善ChemDraw识别与启动，排除虚拟机启动器，使用本机Mac版ChemDraw，并重新检查旧编辑会话的应用目标。
-- 已用ChemDraw 22的原生PDF及PowerPoint实际导出结果，对照验证两份故障样例、跨页结构和45页文档中靠后位置的结构。ChemDraw 26的实机复测待完成。
-- 此次为1.5.7重新发布的构建28。已安装此前1.5.7的用户请下载新DMG覆盖安装；1.5.6及更早版本可选择“检查更新”。升级前完成当前编辑，已有授权和草稿继续保留。
+2.0.1 是 2.0 系列的首个正式版，支持在 Mac 上编辑 Windows ChemDraw OLE 对象，并将新的 CDX 结构粘贴为原生 OLE 对象。
 
-### English
+- 在 ChemDraw 中按 ⌘S 或使用菜单“保存”，将结构和预览同步回原 Office 文档，并保持编辑窗口打开。支持新建且未保存的文档，切换文档后仍回写原编辑目标。
+- 支持编辑 PowerPoint 组合中的结构，保留同组图片、裁剪、文字和叠放顺序。
+- 修复 Word 回写时临时窗口闪现、对象重复和版式跳动，改进开启修订模式时的保存行为。
+- 修复 PowerPoint 中相同的 ChemDraw OLE 对象在复制粘贴后无法打开的问题。每个副本可独立编辑，保存时只更新当前副本。
+- 修复自动更新安装时的架构检查错误，使下载后的应用能够完成替换和重新打开。
 
-- Fix clipped, repeated and partly blank structure previews while retaining the relative positions of drawings copied across pages.
-- Restore each drawing’s saved bond lengths, line widths, fonts and text sizes when opening an edit, including Nature and custom formats. Returning to an open editor retains subsequent changes.
-- Improve ChemDraw discovery and launch: exclude virtual-machine launchers, select native Mac ChemDraw and recheck application targets retained by older editing sessions.
-- Compared both reported examples, cross-page drawings and later-page coordinates in a 45-page document against ChemDraw 22 native PDFs and PowerPoint's rendered PDF output. ChemDraw 26 application retesting is pending.
-- This reissue is version 1.5.7, build 28. Users of the earlier 1.5.7 should download the new DMG and replace the app. Version 1.5.6 and earlier can use Check for Updates. Finish editing before upgrading; existing permissions and drafts are retained.
+Word 和 PowerPoint 已完成相关实机检查。Excel 已通过文件格式和事务检查，实机测试仍待完成。
+
+首次安装请下载 DMG，将应用拖到 Applications，打开后按“设置加载项”的提示完成授权。旧版用户可在菜单栏选择“检查更新”；若安装时提示架构错误，请使用 DMG 手动替换应用。
+
+## English
+
+2.0.1 is the first stable release in the 2.0 series. Edit Windows ChemDraw OLE objects on Mac and paste new CDX structures as native OLE objects.
+
+- Press Command-S or choose Save in ChemDraw to synchronize the structure and preview to the original Office document while keeping the editor open. New, unsaved documents are supported, and edits stay linked to their original target when switching documents.
+- Edit structures inside PowerPoint groups while retaining companion pictures, cropping, captions and stacking order.
+- Fix temporary window flashes, duplicate drawings and layout shifts during Word write-back, and improve saving with Track Changes enabled.
+- Fix an error opening identical ChemDraw OLE copies pasted in PowerPoint. Edit each copy independently and save changes to the selected copy.
+- Fix the architecture check during in-app update installation so the downloaded app can be replaced and reopened.
+
+Word and PowerPoint have completed relevant application checks. Excel has passed file-format and transaction checks; application testing remains pending.
+
+For a first installation, download the DMG, drag the app into Applications, then open it and follow the setup prompts. To upgrade, choose Check for Updates from the menu bar; if installation reports an architecture error, replace the app manually using the DMG.

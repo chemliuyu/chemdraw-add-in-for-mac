@@ -2148,8 +2148,8 @@
     "element": "h1"
   },
   "installer.welcome.1": {
-    "zh": "版本1.5.7 · Apple Silicon + Intel · macOS 12或更新",
-    "en": "Version 1.5.7 · Apple Silicon + Intel · macOS 12 or later",
+    "zh": "2.0.1 · Apple Silicon + Intel · macOS 12 或更新",
+    "en": "2.0.1 · Apple Silicon + Intel · macOS 12 or later",
     "locations": [
       "packaging/Welcome.html"
     ],
@@ -2157,8 +2157,8 @@
     "element": "p"
   },
   "installer.welcome.2": {
-    "zh": "修复结构预览被截断、重复和大片空白的问题，保留多页文档中结构的相对位置。编辑时保留原有绘图设置，并使用本机Mac版ChemDraw。",
-    "en": "Fix clipped, repeated and partly blank previews while retaining positions across pages. Editing preserves saved drawing settings and uses native Mac ChemDraw.",
+    "zh": "修复 PowerPoint 粘贴相同 ChemDraw 对象后无法编辑的问题。每个副本可单独打开和保存。",
+    "en": "Fix editing identical ChemDraw objects pasted in PowerPoint. Open and save each copy independently.",
     "locations": [
       "packaging/Welcome.html"
     ],
@@ -2166,8 +2166,8 @@
     "element": "p"
   },
   "installer.welcome.3": {
-    "zh": "升级时选择“检查更新”，确认后自动下载、替换并重新打开应用。",
-    "en": "Choose Check for Updates and confirm to download, replace and reopen the app automatically.",
+    "zh": "首次安装请从 GitHub 下载 DMG，将应用拖入 Applications。旧版用户可在菜单栏选择“检查更新”；遇到架构错误时，请使用 DMG 手动替换应用。",
+    "en": "For a first installation, download the DMG from GitHub and drag the app into Applications. To upgrade, choose Check for Updates from the menu bar; if an architecture error occurs, replace the app manually using the DMG.",
     "locations": [
       "packaging/Welcome.html"
     ],
@@ -2548,6 +2548,248 @@
     "en": "ChemDraw returned an invalid PDF preview. Copy the structure again and retry.",
     "locations": [
       "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.storage": {
+    "zh": "OLE对象的数据目录损坏或超出可处理范围。请重新打开原文档后重试。",
+    "en": "The OLE storage is damaged or exceeds the supported size. Reopen the original document and retry.",
+    "locations": [
+      "src/NativeOLE.swift",
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.notChemDraw": {
+    "zh": "选中的OLE对象不包含ChemDraw结构。请选中ChemDraw绘图。",
+    "en": "The selected OLE object has no ChemDraw structure. Select a ChemDraw drawing.",
+    "locations": [
+      "src/NativeOLE.swift",
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.cdx": {
+    "zh": "OLE对象需要CDX结构数据。请在ChemDraw中重新复制结构后粘贴。",
+    "en": "OLE objects need CDX source data. Copy the structure again in ChemDraw and paste.",
+    "locations": [
+      "src/NativeOLE.swift",
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.clipboard": {
+    "zh": "Office未提供完整的OLE对象数据。请重新选中绘图后重试。",
+    "en": "Office did not provide a complete OLE object. Select the drawing again and retry.",
+    "locations": [
+      "src/NativeOLE.swift",
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.unsupported": {
+    "zh": "当前Office应用的OLE编辑接口尚未接入。",
+    "en": "OLE editing is not connected for this Office application.",
+    "locations": [
+      "src/NativeOLE.swift",
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.script.0": {
+    "en": "The selected shape is not an embedded OLE object",
+    "zh": "选中的绘图不是嵌入式OLE对象。请重新选择ChemDraw绘图。",
+    "script_error": "The selected shape is not an embedded OLE object",
+    "locations": [
+      "office/powerpoint/adapter.applescript"
+    ]
+  },
+  "ole.script.1": {
+    "en": "PowerPoint did not insert exactly one OLE object; source retained",
+    "zh": "PowerPoint插入的OLE对象数量异常，已保留结构源数据。请重试。",
+    "script_error": "PowerPoint did not insert exactly one OLE object; source retained",
+    "locations": [
+      "office/powerpoint/adapter.applescript"
+    ]
+  },
+  "ole.script.2": {
+    "en": "PowerPoint pasted a picture instead of an OLE object; please retry",
+    "zh": "PowerPoint将结构粘贴成了普通图片。请重新复制结构后重试。",
+    "script_error": "PowerPoint pasted a picture instead of an OLE object; please retry",
+    "locations": [
+      "office/powerpoint/adapter.applescript"
+    ]
+  },
+  "ole.selectionInactive": {
+    "zh": "无法激活目标PowerPoint窗口。请关闭弹出的对话框后重试。",
+    "en": "The target PowerPoint window could not be activated. Close any open dialog and retry.",
+    "locations": [
+      "src/EventMonitor.swift"
+    ]
+  },
+  "ole.selectionMenu": {
+    "zh": "无法打开PowerPoint选择窗格。请在“排列”菜单打开“选择窗格”后重试。",
+    "en": "The PowerPoint Selection Pane could not be opened. Open Selection Pane from Arrange and retry.",
+    "locations": [
+      "src/EventMonitor.swift"
+    ]
+  },
+  "ole.selectionRows": {
+    "zh": "无法唯一定位选择窗格中的绘图（匹配项：{0}）。请重新选中原绘图后重试。",
+    "en": "The drawing could not be uniquely located in Selection Pane ({0} matches). Select the original drawing and retry.",
+    "locations": [
+      "src/EventMonitor.swift"
+    ]
+  },
+  "ole.selectionPosition": {
+    "zh": "无法定位PowerPoint选择窗格中的绘图位置。请展开窗口后重试。",
+    "en": "The drawing row position is unavailable. Expand the PowerPoint window and retry.",
+    "locations": [
+      "src/EventMonitor.swift"
+    ]
+  },
+  "ole.selectionTimeout": {
+    "zh": "PowerPoint未完成绘图选择。请重新选中原绘图后重试。",
+    "en": "PowerPoint did not complete the drawing selection. Select the original drawing and retry.",
+    "locations": [
+      "src/EventMonitor.swift"
+    ]
+  },
+  "ole.copyFailed": {
+    "zh": "读取PowerPoint绘图失败：{0}",
+    "en": "Reading the PowerPoint drawing failed: {0}",
+    "locations": [
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.selectFailed": {
+    "zh": "选择PowerPoint绘图失败：{0}",
+    "en": "Selecting the PowerPoint drawing failed: {0}",
+    "locations": [
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.pasteFailed": {
+    "zh": "插入PowerPoint OLE对象失败：{0}",
+    "en": "Inserting the PowerPoint OLE object failed: {0}",
+    "locations": [
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.focusFailed": {
+    "zh": "定位PowerPoint窗口失败：{0}",
+    "en": "Locating the PowerPoint window failed: {0}",
+    "locations": [
+      "src/NativeAutomation.swift"
+    ]
+  },
+  "ole.writeDisabled": {
+    "zh": "已保留ChemDraw编辑草稿。此开发版的OLE实时回写仍在验证，请使用OLE实验工具导出PPT副本。",
+    "en": "The ChemDraw editing draft is retained. Live OLE write-back is under validation in this development build. Use the OLE experiment tool to export a PowerPoint copy.",
+    "locations": [
+      "src/NativeBridge.swift"
+    ]
+  },
+  "ole.usage": {
+    "zh": "用法：ole-extract <PPTX> <CDX输出>；ole-export <PPTX> <CDX> <PPTX副本>；ole-new <CDX> <PPTX输出>",
+    "en": "Usage: ole-extract <PPTX> <CDX output>; ole-export <PPTX> <CDX> <PPTX copy>; ole-new <CDX> <PPTX output>",
+    "locations": [
+      "src/NativeMain.swift"
+    ]
+  },
+  "ole.newOutput": {
+    "zh": "请选择尚不存在的输出文件名，原文档和源文件会保留。",
+    "en": "Choose a new output filename. The original document and source file are retained.",
+    "locations": [
+      "src/NativeMain.swift"
+    ]
+  },
+  "ole.exported": {
+    "zh": "已导出：{0}",
+    "en": "Exported: {0}",
+    "locations": [
+      "src/NativeMain.swift"
+    ]
+  },
+  "native.revealDrawing": {
+    "zh": "绘图已打开，但无法自动定位到结构所在页面。请在ChemDraw中滚动到目标页，或再次双击继续编辑已保留的草稿。",
+    "en": "The drawing is open, but its page could not be located automatically. Scroll to the drawing in ChemDraw, or double-click again to resume the retained draft.",
+    "locations": [
+      "src/NativeAutomation.swift",
+      "src/EventMonitor.swift"
+    ]
+  },
+  "operation.pasteFailed": {
+    "zh": "粘贴结构失败",
+    "en": "Could Not Paste Drawing",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.openFailed": {
+    "zh": "打开结构失败",
+    "en": "Could Not Open Drawing",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.saveFailed": {
+    "zh": "保存回写失败",
+    "en": "Could Not Update Office Drawing",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.closeFailed": {
+    "zh": "关闭回写失败",
+    "en": "Could Not Finish Drawing Edit",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.failed": {
+    "zh": "结构操作失败",
+    "en": "Drawing Operation Failed",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.keepDraft": {
+    "zh": "编辑草稿已保留。请保留ChemDraw编辑窗口，处理上述问题后再次保存。",
+    "en": "Your editing draft is retained. Keep the ChemDraw editor open, resolve the issue above, then save again.",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.retrySelection": {
+    "zh": "请确认原Office文档仍然打开，重新选择对应结构后重试。",
+    "en": "Keep the original Office document open, select the drawing again, then retry.",
+    "locations": [
+      "src/NativeActivity.swift"
+    ]
+  },
+  "operation.helperFailed": {
+    "zh": "粘贴助手已停止",
+    "en": "Paste Helper Stopped",
+    "locations": [
+      "src/NativeApplication.swift"
+    ]
+  },
+  "ole.wordPicture": {
+    "zh": "Word将结构导入为普通图片。请保留ChemDraw编辑窗口并重试保存。",
+    "en": "Word imported the drawing as a picture. Keep the ChemDraw editor open and retry saving.",
+    "script_error": "Word inserted a picture instead of an OLE object",
+    "locations": [
+      "office/word/adapter.applescript"
+    ]
+  },
+  "ole.excelPicture": {
+    "zh": "Excel将结构粘贴为普通图片。请重新复制结构后重试粘贴。",
+    "en": "Excel pasted the drawing as a picture. Copy the structure again and retry pasting.",
+    "script_error": "Excel pasted a picture instead of an OLE object",
+    "locations": [
+      "office/excel/adapter.applescript"
+    ]
+  },
+  "ole.groupMultiple": {
+    "en": "This group contains several ChemDraw drawings. Ungroup it, then select the drawing to edit.",
+    "zh": "此组合包含多个ChemDraw绘图。请先取消组合，再选择要编辑的绘图。",
+    "locations": [
+      "src/NativeOLE.swift"
     ]
   },
   "native.drawingSettings": {

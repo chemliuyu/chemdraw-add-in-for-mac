@@ -25,9 +25,9 @@ Each drawing carries its editable source and vector artwork. Pasting another str
 
 ## When a structure is already in a document
 
-The published **1.5.7** workflow edits drawings pasted through this add-in. For an existing document, start with editable chemical source in ChemDraw and paste it through the add-in to create a managed drawing.
+**Version 2.0.1** lets you double-click existing **Windows ChemDraw OLE objects** and edit them in Mac ChemDraw. Press Command-S or choose Save to synchronize the structure and preview to the original Office document while keeping the editor open.
 
-Work on opening and updating existing **Windows ChemDraw OLE objects** is tracked on the [2.0 development branch](https://github.com/BoeingART/chemdraw-add-in-for-mac/tree/dev-2.0). Check that branch's current host support and validation records when evaluating Windows-created documents.
+Word and PowerPoint have live application checks. Excel has file-format and transaction checks, with application testing pending. See the [2.0.1 features and validation records](../README.md#version-201).
 
 For a standalone PNG, screenshot or other image, obtain or recreate the editable structure in ChemDraw before using the paste workflow.
 
