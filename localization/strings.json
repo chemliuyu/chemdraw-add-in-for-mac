@@ -2148,8 +2148,8 @@
     "element": "h1"
   },
   "installer.welcome.1": {
-    "zh": "2.0.1-beta · Apple Silicon + Intel · macOS 12 或更新",
-    "en": "2.0.1-beta · Apple Silicon + Intel · macOS 12 or later",
+    "zh": "2.0.1 · Apple Silicon + Intel · macOS 12 或更新",
+    "en": "2.0.1 · Apple Silicon + Intel · macOS 12 or later",
     "locations": [
       "packaging/Welcome.html"
     ],
@@ -2166,8 +2166,8 @@
     "element": "p"
   },
   "installer.welcome.3": {
-    "zh": "升级到此测试版时，请从 GitHub 下载 DMG 并替换 Applications 中的应用。",
-    "en": "To install this beta, download the DMG from GitHub and replace the app in Applications.",
+    "zh": "首次安装请从 GitHub 下载 DMG，将应用拖入 Applications。旧版用户可在菜单栏选择“检查更新”；遇到架构错误时，请使用 DMG 手动替换应用。",
+    "en": "For a first installation, download the DMG from GitHub and drag the app into Applications. To upgrade, choose Check for Updates from the menu bar; if an architecture error occurs, replace the app manually using the DMG.",
     "locations": [
       "packaging/Welcome.html"
     ],

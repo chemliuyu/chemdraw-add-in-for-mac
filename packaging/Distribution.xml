@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>ChemDraw Add-in for Mac 2.0.1-beta</title>
+    <title>ChemDraw Add-in for Mac 2.0.1</title>
     <welcome file="Welcome.html"/>
     <license file="LICENSE.txt"/>
     <conclusion file="Conclusion.html"/>

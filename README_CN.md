@@ -6,19 +6,27 @@
 
 # ChemDraw Add-in for Mac
 
-[下载最新安装包](https://github.com/BoeingART/chemdraw-add-in-for-mac/releases/latest) · [安装指南](docs/installation.md)
+[下载 2.0.1](https://github.com/BoeingART/chemdraw-add-in-for-mac/releases/tag/2.0.1) · [安装指南](docs/installation.md) · [更新记录](CHANGELOG.md)
 
 </div>
 
-在 ChemDraw 中复制化学结构，即可将可编辑的绘图粘贴到 Word、PowerPoint 或 Excel，双击绘图可继续编辑。在 ChemDraw 中保存后，原 Office 图片会同步更新，编辑窗口保持打开。每个绘图都携带可编辑的源数据和 矢量图形。
+**在 Mac 版 Microsoft Word、PowerPoint 和 Excel 中粘贴、打开并继续编辑 ChemDraw 化学结构。**
+
+在 ChemDraw 中复制化学结构，即可将可编辑的绘图粘贴到 Office，双击后继续编辑。也可以在 Mac ChemDraw 中打开已有的 Windows ChemDraw OLE 对象，保存后将修改同步回原 Office 文档，并保持编辑窗口打开。每个绘图都保留可编辑的源数据和预览图。
+
+## 2.0.1 版本
+
+**2.0.1 是 2.0 系列的首个正式版**，于 2026 年 11 月 11 日发布。源码在 [`dev-2.0` 分支](https://github.com/BoeingART/chemdraw-add-in-for-mac/tree/dev-2.0)维护，[`2.0.1` 标签](https://github.com/BoeingART/chemdraw-add-in-for-mac/tree/2.0.1)对应发布时的代码。
+
+- **原生 ChemDraw OLE**　在 Word、PowerPoint 和 Excel 中将 CDX 结构粘贴为原生 OLE 对象，并编辑已有的嵌入式 ChemDraw 结构。CDXML 和旧版绘图使用矢量载体兼容流程。
+- **保存后继续编辑**　按 ⌘S 或使用菜单“保存”，将已保存的结构和预览同步回原 Office 文档。支持新建且未保存的文档，同步期间保留后续输入；切换文档或另存为后，修改仍回到原编辑目标。
+- **PowerPoint**　支持编辑组合中的结构，保留同组图片、裁剪、文字和叠放顺序。修复相同对象复制粘贴后无法打开的问题，每个副本可独立编辑，保存时只更新选中的副本。
+- **Word**　在原位置回写结构，通过隐藏的暂存文档处理保存，修复临时窗口闪现、对象重复和版式跳动。保存与恢复检查包含开启修订模式的场景。
+- **应用内更新**　修复安装更新时错误判断处理器架构的问题，使应用能够完成替换并自动重新打开。
+
+Word 和 PowerPoint 已有粘贴、打开与保存的实机验证记录。Excel 的原生 OLE 实现已通过文件格式和事务检查，安装 Excel 后的实机测试仍待完成。详见 [Word 与 Excel 验证记录](docs/word-excel-native-ole-results.md)、[Word 保存验证记录](docs/word-ole-in-place-results.md)和 [PowerPoint OLE 验证记录](docs/ole-save-performance-results.md)。
 
 ## 功能演示
-
-当前分支为 **2.0.0 开发版**，支持读取 PowerPoint 内的 Windows ChemDraw OLE，并在 Mac ChemDraw 编辑。按 ⌘S 或使用菜单“保存”后，自动回写原 OLE 的结构与矢量预览，保持编辑窗口打开。Mac CDX 粘贴到 PowerPoint 时创建原生 ChemDraw OLE。新建且未保存的 PPT、切换文稿后的回写及同步期间保留后续输入均已验证。Word／Excel 的 OLE 接入继续开发。
-
-构建后可使用 `build/chemoffice ole-extract 输入.pptx 输出.cdx` 提取首个 ChemDraw 对象，使用 `ole-export 输入.pptx 编辑后.cdx 新副本.pptx` 导出修改副本，或使用 `ole-new 源文件.cdx 新演示文稿.pptx` 创建含原生 OLE 对象的演示文稿。输出使用新文件名；Office 文档的保存仍由用户决定。`zsh scripts/test-ole.sh` 检查 OLE 与 PPT 文件格式。
-
-已在 Mac PowerPoint 验证：打开 `ole-new` 生成的演示文稿，复制其中的对象，再粘贴到另一份演示文稿并保存，仍保留 ChemDraw OLE 类别、完整 CDX 和可见预览。可用此路径继续进行 Windows ChemDraw 打开与编辑测试。
 
 ![ChemDraw Add-in for Mac 功能演示](assets/demo.gif)
 
@@ -26,10 +34,10 @@
 
 需要 **macOS 12 或更高版本**，以及已单独安装并激活的 **ChemDraw** 和 **Office for Mac**。支持 Word、PowerPoint 和 Excel。
 
-1. 下载通用 DMG，打开后将应用拖到旁边的 **Applications** 文件夹。从旧版迁移时，先完成当前结构编辑并退出插件，再替换应用。
+1. 从 [2.0.1 发布页](https://github.com/BoeingART/chemdraw-add-in-for-mac/releases/tag/2.0.1)下载通用 DMG，打开后将应用拖到旁边的 **Applications** 文件夹。安装包适用于 Apple 芯片和 Intel Mac。从旧版迁移时，先完成当前结构编辑并退出插件，再替换应用。
 2. 首次打开应用，“**设置加载项**”会分别检查 Word、PowerPoint、Excel 文件访问、辅助功能及助手就绪状态，只配置已安装的 Office 应用。
 3. 按系统提示确认授权。程序会自动注册加载项、验证目录写入与读回并启动助手，检查通过后点击“**完成**”。
-4. 后续在应用中选择“**检查更新**”，确认后会自动下载、替换应用并重新打开，保留已有授权、连接证书和草稿。正在编辑的结构会等待编辑结束后再更新。
+4. 后续在菜单栏选择“**检查更新**”，确认后会自动下载、替换应用并重新打开，保留已有授权、连接证书和草稿。正在编辑的结构会等待编辑结束后再更新。如果旧版在安装更新时提示架构错误，请手动安装 2.0.1 DMG。
 5. 首次启用 Excel 时，按提示授予 Excel 文件访问及自动化权限。已有 Office 授权缺失时，可打开设置或选择“**修复加载项**”。
 
 关闭窗口后，助手会继续在菜单栏运行。如果隐藏了菜单栏图标，可从“应用程序”重新打开本应用以恢复图标。菜单中会显示当前版本。更新时会显示下载进度，并可取消下载；安装完成后，应用会自动重新打开。
@@ -55,6 +63,16 @@
 ## 构建与验证
 
 从源码构建需要 Apple 命令行工具及 Swift 5.7 或更高版本。运行 `zsh scripts/build.sh` 可为当前架构构建；运行 `zsh scripts/build.sh --universal` 可同时为 Apple Silicon 和 Intel 构建。安装包制作与签名配置见[安装指南](docs/installation.md)。
+
+构建后可使用 PowerPoint OLE 命令行工具。
+
+```sh
+build/chemoffice ole-extract input.pptx output.cdx
+build/chemoffice ole-export input.pptx edited.cdx new-copy.pptx
+build/chemoffice ole-new source.cdx new-presentation.pptx
+```
+
+以上命令依次用于提取首个 ChemDraw 对象、导出修改后的演示文稿副本，以及创建含原生 OLE 对象的演示文稿。输出请使用新文件名。运行 `zsh scripts/test-ole.sh` 可检查 Word、PowerPoint 和 Excel 的 OLE 传输格式，并编译 PowerPoint 适配脚本。
 
 已完成的检查记录见[安装就绪检查](docs/installation-readiness-results.md)和[未保存 Office 文档检查](docs/unsaved-office-results.md)。练习文档见[示例](examples/README.md)。
 

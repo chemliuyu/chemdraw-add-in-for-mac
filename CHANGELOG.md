@@ -1,6 +1,8 @@
 # Changelog
 
-## v2.0.1-beta
+## 2.0.1 — 2026-11-11
+
+- First stable release in the 2.0 series, bringing native ChemDraw OLE paste and editing to Office for Mac. Word and PowerPoint have live application checks; Excel has file-format and transaction checks, with application testing pending.
 
 - Fix opening and saving identical ChemDraw OLE copies pasted in PowerPoint. Each selected copy gets its own editing identity when PowerPoint has retained the same marker.
 - Fix the in-app update architecture check so signed updates can finish installation and relaunch.
